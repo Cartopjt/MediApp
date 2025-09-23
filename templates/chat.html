@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Chat - {{ medicamento }}</title>
+  <style>
+    body { font-family: Arial; background: #f4f4f9; padding: 20px; }
+    .chat-box { border: 1px solid #ccc; background: #fff; padding: 15px; max-width: 600px; margin: auto; border-radius: 8px; }
+    .msg { margin: 10px 0; }
+    .user { color: blue; font-weight: bold; }
+    .bot { color: green; font-weight: bold; }
+    .input-area { margin-top: 15px; }
+  </style>
+</head>
+<body>
+  <h1>Chat sobre {{ medicamento }}</h1>
+
+  <div class="chat-box">
+    {% for mensaje in historial %}
+      <div class="msg"><span class="user">Tú:</span> {{ mensaje.usuario }}</div>
+      <div class="msg"><span class="bot">Asistente:</span> {{ mensaje.bot }}</div>
+    {% endfor %}
+  </div>
+
+  <form method="POST" class="input-area">
+    <input type="text" name="mensaje" placeholder="Escribe tu pregunta..." required style="width:70%">
+    <button type="submit">Enviar</button>
+  </form>
+
+  <p><a href="{{ url_for('index') }}">⬅ Volver al inicio</a></p>
+</body>
+</html>

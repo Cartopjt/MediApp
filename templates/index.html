@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>OCR Medicamentos</title>
+</head>
+<body>
+  <!-- Navbar -->
+  <nav style="background: #3498db; padding: 10px;">
+    <a href="{{ url_for('index') }}" style="color: white; margin-right: 10px;">Inicio</a>
+
+    {% if current_user.is_authenticated %}
+      <span style="color: white; margin-right: 10px;">
+        Bienvenido, {{ current_user.email }}
+      </span>
+      <a href="{{ url_for('logout') }}" style="color: white;">Cerrar sesión</a>
+    {% else %}
+      <a href="{{ url_for('login') }}" style="color: white; margin-right: 10px;">Iniciar sesión</a>
+      <a href="{{ url_for('register') }}" style="color: white;">Registrarse</a>
+    {% endif %}
+  </nav>
+
+  <!-- Contenido principal -->
+  <div style="padding: 20px;">
+    <h1>Subir imagen de medicamento</h1>
+
+    {% if current_user.is_authenticated %}
+      <p>Tienes <strong>consultas ilimitadas</strong>.</p>
+    {% else %}
+      <p>Eres invitado. Te quedan 
+        <strong>{{ session.get('consultas_invitado', 3) }}</strong> 
+        consultas gratis.
+      </p>
+    {% endif %}
+
+    <form method="POST" enctype="multipart/form-data">
+      <input type="file" name="imagen" accept="image/*">
+      <button type="submit">Procesar</button>
+    </form>
+
+    {% if resultado %}
+      <h2>Resultado OCR:</h2>
+      <p><strong>Texto detectado:</strong> {{ resultado.texto_detectado }}</p>
+
+      {% if resultado.error %}
+        <p style="color:red">{{ resultado.error }}</p>
+      {% else %}
+        <p><strong>Medicamento encontrado:</strong> {{ resultado.nombre }}</p>
+        <p><strong>Confianza:</strong> {{ resultado.confianza }}</p>
+        <p><strong>Dosis:</strong> {{ resultado.dosis }}</p>
+        <p><strong>Descripción:</strong> {{ resultado.descripcion }}</p>
+
+        {% if resultado.chatgpt %}
+          <h2>Información adicional (GPT):</h2>
+          <p>{{ resultado.chatgpt }}</p>
+          <form action="{{ url_for('chat', medicamento=resultado.nombre) }}">
+             <button type="submit">💬 Más información</button>
+          </form>
+        {% endif %}
+      {% endif %}
+    {% endif %}
+  </div>
+</body>
+</html>
