@@ -1,3 +1,4 @@
+from dotenv import load_dotenv
 import os
 from datetime import date
 from flask import Flask, render_template, request ,redirect, url_for, session,flash
@@ -7,11 +8,14 @@ from flask_login import (
     logout_user, login_required, current_user
 )
 from werkzeug.security import generate_password_hash, check_password_hash
-from PIL import Image
-import pytesseract
 from rapidfuzz import process
 import pymysql
 from openai import OpenAI
+
+#Modelos y el ORC
+from extension import db
+from models import User, Medicamento, Consulta
+from ocr_utility import ocr_texto, buscar_medicamento
 
 pymysql.install_as_MySQLdb()
 app = Flask(__name__)
@@ -21,35 +25,15 @@ app.config["SQLALCHEMY_DATABASE_URI"] = "mysql+pymysql://root:@localhost/medicam
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["SECRET_KEY"] = "secretpasswd"
 
-db = SQLAlchemy(app)
+db.init_app(app)
 
 # Login Manager
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = "login"
 
-#Aqui va la ruta del programa de pyteseeract (cambiante)
-pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract"
-
 # Cliente GPT
 client = OpenAI(api_key="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") 
-
-# Dataset temporal (cambio a base de datos futuro)
-medicamentos = [
-    {"nombre": "Paracetamol", "dosis": "500mg", "descripcion": "Analgésico y antipirético"},
-    {"nombre": "Ibuprofeno", "dosis": "400mg", "descripcion": "Antiinflamatorio"},
-    {"nombre": "Amoxicilina", "dosis": "500mg", "descripcion": "Antibiótico de amplio espectro"}
-]
-nombres = [m["nombre"] for m in medicamentos]
-
-# MODELOS
-class User(db.Model, UserMixin):
-    __tablename__ = "usuarios" 
-    id = db.Column(db.Integer, primary_key=True)
-    email = db.Column(db.String(150), unique=True, nullable=False)
-    passwd = db.Column(db.String(200), nullable=False)
-    consultas_hoy = db.Column(db.Integer, default=0)
-    ultima_fecha = db.Column(db.Date, default=date.today)
 
 # LOGIN MANAGER
 @login_manager.user_loader
@@ -58,11 +42,18 @@ def load_user(user_id):
 
 
 # FUNCIONES
+# Dataset temporal (cambio a base de datos futuro)
+def obtener_medicamentos():
+    return Medicamento.query.all()
+
+def obtener_nombres():
+    return [m.nombre_medicamento for m in Medicamento.query.all()]
+
 def consultar_gpt(medicamento, descripcion_base):
     print(">>> Entrando a consultar_gpt con:", medicamento)
 
     # Filtro: solo dejamos pasar medicamentos de la lista
-    if medicamento not in nombres:
+    if medicamento not in obtener_nombres():
         return "El texto detectado no corresponde a un medicamento válido."
 
     prompt = f"""
@@ -185,24 +176,31 @@ def index():
         archivo.save(ruta_imagen)
 
         # OCR
-        texto_detectado = pytesseract.image_to_string(Image.open(ruta_imagen))
+        texto_detectado = ocr_texto(ruta_imagen)
         palabra = texto_detectado.split()[0] if texto_detectado else ""
+
+        # Fuzzy matching en BD
+        medicamento, score = buscar_medicamento(texto_detectado)
 
         # Coincidencia con dataset (base de datos futuro)
         if palabra:
+            nombres = obtener_nombres()
             nombre, score, _ = process.extractOne(palabra, nombres)
-            for m in medicamentos:
-                if m["nombre"] == nombre:
-                    explicacion_gpt = consultar_gpt(nombre, m["descripcion"])
-                    resultado = {
-                        "texto_detectado": texto_detectado,
-                        "nombre": nombre,
-                        "confianza": f"{score:.2f}%",
-                        "dosis": m["dosis"],
-                        "descripcion": m["descripcion"],
-                        "chatgpt": explicacion_gpt
-                    }
-                    break
+            med = Medicamento.query.filter_by(nombre_medicamento=nombre).first()
+            if med:
+                explicacion_gpt = consultar_gpt(nombre, med.uso_clinico or "")
+                resultado = {
+                    "texto_detectado": texto_detectado,
+                    "nombre": nombre,
+                    "confianza": f"{score:.2f}%",
+                    "dosis": med.dosis_pautas,
+                    "descripcion": med.uso_clinico,
+                    "chatgpt": explicacion_gpt
+                }
+                if current_user.is_authenticated:
+                    consulta = Consulta(usuario_id=current_user.id, medicamento_id=med.id)
+                    db.session.add(consulta)
+                    db.session.commit()    
         else:
             resultado = {"error": "No se detectó texto"}
 
@@ -211,7 +209,7 @@ def index():
 #Ruta de chat
 @app.route("/chat/<medicamento>", methods=["GET", "POST"])
 def chat(medicamento):
-    if medicamento not in nombres:
+    if medicamento not in obtener_nombres():
         return "Medicamento no válido."
 
     historial = session.get("historial_chat", [])
