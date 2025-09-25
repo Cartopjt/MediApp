@@ -5,63 +5,78 @@ from rapidfuzz import fuzz, process
 from models import Medicamento
 
 # ----------------------------
-# Lista negra y limpieza de texto
-# ----------------------------
-LISTA_NEGRA = {"mg", "ml", "tabletas", "recubiertas", "capsulas",
-               "jarabe", "solucion", "via", "oral", "uso"}
-
-def limpiar_texto(texto):
-    """Limpia el texto manteniendo solo palabras útiles para búsqueda de medicamentos."""
-    limpio = re.sub(r"[^a-zA-ZáéíóúÁÉÍÓÚñÑ0-9\s]", " ", texto)
-    limpio = re.sub(r"\s+", " ", limpio)
-    limpio = limpio.lower().strip()
-    palabras = [p for p in limpio.split() if len(p) > 1 and p not in LISTA_NEGRA]
-    return palabras
-
-# ----------------------------
 # Búsqueda fuzzy de medicamento
 # ----------------------------
+LISTA_NEGRA = {
+    "mg", "ml", "tabletas", "comprimidos", "capsulas", "jarabe", "solucion",
+    "via", "oral", "uso", "industria", "venta", "libre", "bayer",
+    "argentina", "genfarc", "farmacia", "análgesico", "analgesico", 
+    "antifebril"
+}
+
+def limpiar_texto(texto):
+    limpio = re.sub(r"[^a-zA-ZáéíóúÁÉÍÓÚñÑ0-9\s]", " ", texto)
+    limpio = re.sub(r"\s+", " ", limpio).lower().strip()
+    palabras = [p for p in limpio.split() if len(p) > 2 and p not in LISTA_NEGRA]
+    return " ".join(palabras)   # devolvemos texto limpio entero
+
+
+
 def buscar_medicamento(texto_ocr):
-    """Busca el medicamento más parecido en la base de datos."""
     medicamentos = [m.nombre_medicamento for m in Medicamento.query.all()]
     if not medicamentos:
-        return None, 0
+        return None, [], 0.0  # <-- añadimos score 0
 
-    candidatos = limpiar_texto(texto_ocr)
-    mejor_nombre = None
-    mejor_score = 0
+    texto_filtrado = limpiar_texto(texto_ocr)
 
-    for candidato in candidatos:
-        match = process.extractOne(candidato, medicamentos, scorer=fuzz.WRatio)
-        if match:
-            nombre, score, _ = match
-            if score > mejor_score:
-                mejor_nombre = nombre
-                mejor_score = score
+    # Buscar top 5 coincidencias
+    matches = process.extract(
+        texto_filtrado,
+        medicamentos,
+        scorer=fuzz.WRatio,
+        limit=5
+    )
 
-    if mejor_nombre:
-        med = Medicamento.query.filter_by(nombre_medicamento=mejor_nombre).first()
-        return med, mejor_score
+    sugerencias = [{"nombre": m[0], "confianza": round(m[1], 2)} for m in matches]
 
-    return None, 0
+    mejor = matches[0] if matches else None
+
+    if mejor:
+        score = mejor[1]  # <-- aquí tenemos el score
+        if score >= 80:   # <-- aceptamos con margen del 80%
+            med = Medicamento.query.filter_by(nombre_medicamento=mejor[0]).first()
+            return med, sugerencias, score
+
+    # Si no hay match fuerte
+    return None, sugerencias, 0.0
+
 
 # ----------------------------
 # OCR con Google Cloud Vision
 # ----------------------------
 def ocr_texto(ruta_imagen):
-    """Detecta texto en la imagen usando Google Cloud Vision API."""
-    client = vision.ImageAnnotatorClient()  # Usa automáticamente la variable de entorno
+
+    client = vision.ImageAnnotatorClient()
 
     with io.open(ruta_imagen, "rb") as image_file:
         content = image_file.read()
 
     image = vision.Image(content=content)
     response = client.text_detection(image=image)
+    if response.error.message:
+        raise Exception(f"OCR Error: {response.error.message}")
+
     textos = response.text_annotations
 
     if textos:
         # El primer elemento contiene todo el texto detectado
         texto_detectado = textos[0].description
+        print(">>> TEXTO DETECTADO PRINCIPAL:", texto_detectado)
+
+        # Extra: palabras individuales
+        for idx, t in enumerate(textos[1:], start=1):
+            print(f"[{idx}] '{t.description}' -> bounding box: {t.bounding_poly.vertices}")
+
         return texto_detectado.strip()
-    else:
-        return ""
+
+    return ""

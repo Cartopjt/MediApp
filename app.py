@@ -1,4 +1,3 @@
-from dotenv import load_dotenv
 import os
 from datetime import date
 from flask import Flask, render_template, request ,redirect, url_for, session,flash
@@ -177,32 +176,57 @@ def index():
 
         # OCR
         texto_detectado = ocr_texto(ruta_imagen)
-        palabra = texto_detectado.split()[0] if texto_detectado else ""
 
-        # Fuzzy matching en BD
-        medicamento, score = buscar_medicamento(texto_detectado)
+        # Fuzzy matching en BD 
+        medicamento, sugerencias,score = buscar_medicamento(texto_detectado)
 
         # Coincidencia con dataset (base de datos futuro)
-        if palabra:
-            nombres = obtener_nombres()
-            nombre, score, _ = process.extractOne(palabra, nombres)
-            med = Medicamento.query.filter_by(nombre_medicamento=nombre).first()
-            if med:
-                explicacion_gpt = consultar_gpt(nombre, med.uso_clinico or "")
+        if medicamento and score >= 80:
+            explicacion_gpt = consultar_gpt(medicamento.nombre_medicamento, medicamento.uso_clinico or "")  
+            resultado = {
+                "texto_detectado": texto_detectado,
+                "nombre": medicamento.nombre_medicamento,
+                "confianza": f"{score:.2f}%",
+                "dosis": medicamento.dosis_pautas,
+                "descripcion": medicamento.uso_clinico,
+                "chatgpt": explicacion_gpt,
+            }
+            if current_user.is_authenticated:
+                consulta = Consulta(usuario_id=current_user.id, medicamento_id=medicamento.id)
+                db.session.add(consulta)
+                db.session.commit()    
+        else:
+            if sugerencias:
                 resultado = {
                     "texto_detectado": texto_detectado,
-                    "nombre": nombre,
-                    "confianza": f"{score:.2f}%",
-                    "dosis": med.dosis_pautas,
-                    "descripcion": med.uso_clinico,
-                    "chatgpt": explicacion_gpt
+                    "error": "No se detectó coincidencia exacta, pero aquí tienes sugerencias en base a su busqueda:",
+                    "sugerencias": sugerencias
                 }
-                if current_user.is_authenticated:
-                    consulta = Consulta(usuario_id=current_user.id, medicamento_id=med.id)
-                    db.session.add(consulta)
-                    db.session.commit()    
-        else:
-            resultado = {"error": "No se detectó texto"}
+            else: 
+                resultado = {
+                    "texto_detectado": texto_detectado,
+                    "error": "Medicamento no encontrado."
+                }
+
+    return render_template("index.html", resultado=resultado)
+
+#Ruta alternativa
+@app.route("/medicamento/<nombre>")
+def ver_medicamento(nombre):
+    med = Medicamento.query.filter_by(nombre_medicamento=nombre).first()
+    if not med:
+        return "Medicamento no encontrado", 404
+
+    explicacion_gpt = consultar_gpt(med.nombre_medicamento, med.uso_clinico or "")
+
+    resultado = {
+        "texto_detectado": nombre,
+        "nombre": med.nombre_medicamento,
+        "confianza": "100%",
+        "dosis": med.dosis_pautas,
+        "descripcion": med.uso_clinico,
+        "chatgpt": explicacion_gpt
+    }
 
     return render_template("index.html", resultado=resultado)
 

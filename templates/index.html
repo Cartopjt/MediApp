@@ -2,21 +2,25 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <title>OCR Medicamentos</title>
+  <title>Smart Pharmacy</title>
+  <style>
+    nav { background: #3498db; padding: 10px; }
+    nav a, nav span { color: white; margin-right: 10px; text-decoration: none; }
+    .error { color: red; font-weight: bold; }
+    .resultado { margin-top: 20px; padding: 15px; border: 1px solid #ccc; border-radius: 5px; }
+    button { margin-top: 10px; }
+  </style>
 </head>
 <body>
   <!-- Navbar -->
-  <nav style="background: #3498db; padding: 10px;">
-    <a href="{{ url_for('index') }}" style="color: white; margin-right: 10px;">Inicio</a>
-
+  <nav>
+    <a href="{{ url_for('index') }}">Inicio</a>
     {% if current_user.is_authenticated %}
-      <span style="color: white; margin-right: 10px;">
-        Bienvenido, {{ current_user.email }}
-      </span>
-      <a href="{{ url_for('logout') }}" style="color: white;">Cerrar sesión</a>
+      <span>Bienvenido, {{ current_user.email }}</span>
+      <a href="{{ url_for('logout') }}">Cerrar sesión</a>
     {% else %}
-      <a href="{{ url_for('login') }}" style="color: white; margin-right: 10px;">Iniciar sesión</a>
-      <a href="{{ url_for('register') }}" style="color: white;">Registrarse</a>
+      <a href="{{ url_for('login') }}">Iniciar sesión</a>
+      <a href="{{ url_for('register') }}">Registrarse</a>
     {% endif %}
   </nav>
 
@@ -33,31 +37,52 @@
       </p>
     {% endif %}
 
+    <!-- Formulario con dos opciones -->
     <form method="POST" enctype="multipart/form-data">
       <input type="file" name="imagen" accept="image/*">
-      <button type="submit">Procesar</button>
+      <button type="submit">📁 Subir archivo</button>
+    </form>
+
+    <form method="POST" enctype="multipart/form-data">
+      <input type="file" name="imagen" accept="image/*" capture="environment">
+      <button type="submit">📷 Tomar foto</button>
     </form>
 
     {% if resultado %}
-      <h2>Resultado OCR:</h2>
-      <p><strong>Texto detectado:</strong> {{ resultado.texto_detectado }}</p>
+      <div class="resultado">
+        <h2>Resultado OCR:</h2>
+        <p><strong>Texto detectado:</strong> {{ resultado.texto_detectado }}</p>
 
-      {% if resultado.error %}
-        <p style="color:red">{{ resultado.error }}</p>
-      {% else %}
-        <p><strong>Medicamento encontrado:</strong> {{ resultado.nombre }}</p>
-        <p><strong>Confianza:</strong> {{ resultado.confianza }}</p>
-        <p><strong>Dosis:</strong> {{ resultado.dosis }}</p>
-        <p><strong>Descripción:</strong> {{ resultado.descripcion }}</p>
+        {% if resultado.error %}
+          <p class="error">{{ resultado.error }}</p>
+        {% else %}
+          <p><strong>Medicamento encontrado:</strong> {{ resultado.nombre }}</p>
+          <p><strong>Confianza:</strong> {{ resultado.confianza }}</p>
+          <p><strong>Dosis:</strong> {{ resultado.dosis }}</p>
+          <p><strong>Descripción:</strong> {{ resultado.descripcion }}</p>
 
-        {% if resultado.chatgpt %}
-          <h2>Información adicional (GPT):</h2>
-          <p>{{ resultado.chatgpt }}</p>
-          <form action="{{ url_for('chat', medicamento=resultado.nombre) }}">
-             <button type="submit">💬 Más información</button>
-          </form>
+          {% if resultado.chatgpt %}
+            <h3>Información adicional (GPT):</h3>
+            <p>{{ resultado.chatgpt }}</p>
+            <form action="{{ url_for('chat', medicamento=resultado.nombre) }}">
+              <button type="submit">💬 Más información</button>
+            </form>
+          {% endif %}
+
+          {% if resultado.sugerencias %}
+            <h3>🔍 Sugerencias:</h3>
+            <ul>
+              {% for s in resultado.sugerencias %}
+                <li>
+                  <a href="{{ url_for('ver_medicamento', nombre=s.nombre) }}">
+                    {{ s.nombre }} ({{ s.confianza }}%)
+                  </a>
+                </li>
+              {% endfor %}
+            </ul>
+          {% endif %}
         {% endif %}
-      {% endif %}
+      </div>
     {% endif %}
   </div>
 </body>
