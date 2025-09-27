@@ -1,5 +1,6 @@
 import os
 from datetime import date
+from werkzeug.utils import secure_filename
 from flask import Flask, render_template, request ,redirect, url_for, session,flash
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import (
@@ -32,7 +33,7 @@ login_manager.init_app(app)
 login_manager.login_view = "login"
 
 # Cliente GPT
-client = OpenAI(api_key="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") 
+client = OpenAI(api_key="") 
 
 # LOGIN MANAGER
 @login_manager.user_loader
@@ -171,6 +172,7 @@ def index():
             return "No seleccionaste archivo"
 
         # Guardar temporalmente la imagen
+        filename = secure_filename(archivo.filename)
         ruta_imagen = os.path.join("static", archivo.filename)
         archivo.save(ruta_imagen)
 
@@ -184,22 +186,29 @@ def index():
         if medicamento and score >= 80:
             explicacion_gpt = consultar_gpt(medicamento.nombre_medicamento, medicamento.uso_clinico or "")  
             resultado = {
-                "texto_detectado": texto_detectado,
+                "imagen": filename, # la ruta de la foto subida
                 "nombre": medicamento.nombre_medicamento,
                 "confianza": f"{score:.2f}%",
-                "dosis": medicamento.dosis_pautas,
-                "descripcion": medicamento.uso_clinico,
+                "uso_clinico": medicamento.uso_clinico,
+                "dosis_pautas": medicamento.dosis_pautas,
+                "contraindicaciones": medicamento.contraindicaciones,
+                "precauciones": medicamento.precauciones,
+                "efectos_secundarios": medicamento.efectos_secundarios,
+                "interacciones": medicamento.interacciones,
+                "datos_farmaceuticos": medicamento.datos_farmaceuticos,
                 "chatgpt": explicacion_gpt,
             }
             if current_user.is_authenticated:
-                consulta = Consulta(usuario_id=current_user.id, medicamento_id=medicamento.id)
+                consulta = Consulta(usuario_id=current_user.id,medicamento_id=medicamento.id,imagen_subida=filename,chatgpt=explicacion_gpt)
                 db.session.add(consulta)
                 db.session.commit()    
+                session["ultimo_resultado"] = resultado
         else:
             if sugerencias:
                 resultado = {
+                    "imagen": filename,
                     "texto_detectado": texto_detectado,
-                    "error": "No se detectó coincidencia exacta, pero aquí tienes sugerencias en base a su busqueda:",
+                    "error": "No se detectó coincidencia exacta, prueba otra vez",
                     "sugerencias": sugerencias
                 }
             else: 
@@ -209,6 +218,38 @@ def index():
                 }
 
     return render_template("index.html", resultado=resultado)
+
+
+#Volver a consulta
+@app.route("/consulta")
+def volver_consulta():
+    if current_user.is_authenticated:
+        consulta = Consulta.query.filter_by(usuario_id=current_user.id).order_by(Consulta.id.desc()).first()
+        if not consulta:
+            flash("No hay consultas previas.")
+            return redirect(url_for("index"))
+
+        med = Medicamento.query.get(consulta.medicamento_id)
+        resultado = {
+            "imagen": consulta.imagen_subida,
+            "nombre": med.nombre_medicamento,
+            "uso_clinico": med.uso_clinico,
+            "dosis_pautas": med.dosis_pautas,
+            "contraindicaciones": med.contraindicaciones,
+            "precauciones": med.precauciones,
+            "efectos_secundarios": med.efectos_secundarios,
+            "interacciones": med.interacciones,
+            "datos_farmaceuticos": med.datos_farmaceuticos,
+            "chatgpt": consulta.chatgpt  # Aquí cargamos la respuesta guardada
+        }
+    else:
+        resultado = session.get("ultimo_resultado")
+        if not resultado:
+            flash("No hay consultas previas.")
+            return redirect(url_for("index"))
+
+    return render_template("index.html", resultado=resultado)
+
 
 #Ruta alternativa
 @app.route("/medicamento/<nombre>")
@@ -236,7 +277,21 @@ def chat(medicamento):
     if medicamento not in obtener_nombres():
         return "Medicamento no válido."
 
-    historial = session.get("historial_chat", [])
+    # Reiniciamos historial en cada nueva consulta
+    historial = []
+
+    # Agregamos el mensaje inicial del bot
+    from datetime import datetime
+    hora = datetime.now().hour
+
+    if hora < 12:
+        saludo = f"Buenos días, ¿qué quiere saber sobre {medicamento}?"
+    elif hora < 19:
+        saludo = f"Buenas tardes, ¿qué quiere saber sobre {medicamento}?"
+    else:
+        saludo = f"Buenas noches, ¿qué quiere saber sobre {medicamento}?"
+
+    historial.append({"usuario": "", "bot": saludo})
 
     if request.method == "POST":
         pregunta = request.form["mensaje"]
@@ -262,11 +317,11 @@ def chat(medicamento):
         except Exception as e:
             respuesta = f"Error al consultar IA: {e}"
 
-        # Guardamos el historial del chat en sesión
+        # Guardamos en historial (solo de la sesión actual)
         historial.append({"usuario": pregunta, "bot": respuesta})
-        session["historial_chat"] = historial
 
     return render_template("chat.html", medicamento=medicamento, historial=historial)
+
 
 if __name__ == "__main__":
     app.run(debug=False)

@@ -4,11 +4,47 @@
   <meta charset="UTF-8">
   <title>Smart Pharmacy</title>
   <style>
-    nav { background: #3498db; padding: 10px; }
-    nav a, nav span { color: white; margin-right: 10px; text-decoration: none; }
-    .error { color: red; font-weight: bold; }
-    .resultado { margin-top: 20px; padding: 15px; border: 1px solid #ccc; border-radius: 5px; }
-    button { margin-top: 10px; }
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+    }
+    nav { 
+      background: #3498db; 
+      padding: 10px; 
+    }
+    nav a, nav span { 
+      color: white; 
+      margin-right: 10px; 
+      text-decoration: none; 
+    }
+    .error { 
+      color: red; 
+      font-weight: bold; 
+    }
+    .resultado-container {
+      display: flex;
+      gap: 20px;
+      margin-top: 20px;
+      padding: 15px;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+    }
+    .datos { 
+      flex: 2; 
+    }
+    .imagen { 
+      flex: 1; 
+      text-align: center; 
+    }
+    .imagen img {
+      max-width: 100%;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+    }
+    button { 
+      margin-top: 10px; 
+    }
   </style>
 </head>
 <body>
@@ -38,7 +74,7 @@
     {% endif %}
 
     <!-- Formulario con dos opciones -->
-    <form method="POST" enctype="multipart/form-data">
+    <form method="POST" action="{{ url_for('index') }}" enctype="multipart/form-data">
       <input type="file" name="imagen" accept="image/*">
       <button type="submit">📁 Subir archivo</button>
     </form>
@@ -49,39 +85,67 @@
     </form>
 
     {% if resultado %}
-      <div class="resultado">
-        <h2>Resultado OCR:</h2>
-        <p><strong>Texto detectado:</strong> {{ resultado.texto_detectado }}</p>
+      <div class="resultado-container">
+        <!-- Columna datos -->
+        <div class="datos">
+          {% if resultado.error %}
+            <p class="error">{{ resultado.error }}</p>
+          {% else %}
+            <h2>{{ resultado.nombre }}</h2>
 
-        {% if resultado.error %}
-          <p class="error">{{ resultado.error }}</p>
-        {% else %}
-          <p><strong>Medicamento encontrado:</strong> {{ resultado.nombre }}</p>
-          <p><strong>Confianza:</strong> {{ resultado.confianza }}</p>
-          <p><strong>Dosis:</strong> {{ resultado.dosis }}</p>
-          <p><strong>Descripción:</strong> {{ resultado.descripcion }}</p>
+            {% if resultado.uso_clinico %}
+              <p><strong>Uso clínico:</strong> {{ resultado.uso_clinico }}</p>
+            {% endif %}
+            {% if resultado.dosis_pautas %}
+              <p><strong>Dosis y pautas:</strong> {{ resultado.dosis_pautas }}</p>
+            {% endif %}
+            {% if resultado.contraindicaciones %}
+              <p><strong>Contraindicaciones:</strong> {{ resultado.contraindicaciones }}</p>
+            {% endif %}
+            {% if resultado.precauciones %}
+              <p><strong>Precauciones:</strong> {{ resultado.precauciones }}</p>
+            {% endif %}
+            {% if resultado.efectos_secundarios %}
+              <p><strong>Efectos secundarios:</strong> {{ resultado.efectos_secundarios }}</p>
+            {% endif %}
+            {% if resultado.interacciones %}
+              <p><strong>Interacciones:</strong> {{ resultado.interacciones }}</p>
+            {% endif %}
+            {% if resultado.datos_farmaceuticos %}
+              <p><strong>Datos farmacéuticos:</strong> {{ resultado.datos_farmaceuticos }}</p>
+            {% endif %}
 
-          {% if resultado.chatgpt %}
-            <h3>Información adicional (GPT):</h3>
-            <p>{{ resultado.chatgpt }}</p>
-            <form action="{{ url_for('chat', medicamento=resultado.nombre) }}">
-              <button type="submit">💬 Más información</button>
-            </form>
+            {% if resultado.chatgpt %}
+              <h3>Información adicional (GPT):</h3>
+              <p>{{ resultado.chatgpt }}</p>
+              <form action="{{ url_for('chat', medicamento=resultado.nombre) }}">
+                <button type="submit">💬 Más información</button>
+              </form>
+            {% endif %}
+
+            {% if resultado.sugerencias %}
+              <h3>🔍 Sugerencias:</h3>
+              <ul>
+                {% for s in resultado.sugerencias %}
+                  <li>
+                    <a href="{{ url_for('ver_medicamento', nombre=s.nombre) }}">
+                      {{ s.nombre }} ({{ s.confianza }}%)
+                    </a>
+                  </li>
+                {% endfor %}
+              </ul>
+            {% endif %}
           {% endif %}
+        </div>
 
-          {% if resultado.sugerencias %}
-            <h3>🔍 Sugerencias:</h3>
-            <ul>
-              {% for s in resultado.sugerencias %}
-                <li>
-                  <a href="{{ url_for('ver_medicamento', nombre=s.nombre) }}">
-                    {{ s.nombre }} ({{ s.confianza }}%)
-                  </a>
-                </li>
-              {% endfor %}
-            </ul>
+        <!-- Columna imagen -->
+        <div class="imagen">
+          {% if resultado.imagen %}
+            <h4>📷 Imagen analizada:</h4>
+            <img src="{{ url_for('static', filename=resultado.imagen) }}" 
+                 alt="Imagen del medicamento">
           {% endif %}
-        {% endif %}
+        </div>
       </div>
     {% endif %}
   </div>

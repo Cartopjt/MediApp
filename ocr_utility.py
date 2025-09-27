@@ -1,9 +1,14 @@
 import io
 import re
+import os
+import base64
+import requests
 from google.cloud import vision
 from rapidfuzz import fuzz, process
 from models import Medicamento
+from dotenv import load_dotenv
 
+load_dotenv()
 # ----------------------------
 # Búsqueda fuzzy de medicamento
 # ----------------------------
@@ -25,29 +30,53 @@ def limpiar_texto(texto):
 def buscar_medicamento(texto_ocr):
     medicamentos = [m.nombre_medicamento for m in Medicamento.query.all()]
     if not medicamentos:
-        return None, [], 0.0  # <-- añadimos score 0
+        return None, [], 0.0
 
     texto_filtrado = limpiar_texto(texto_ocr)
 
-    # Buscar top 5 coincidencias
-    matches = process.extract(
+    # Dividimos en palabras para buscar coincidencias también
+    palabras = texto_filtrado.split()
+
+    candidatos = []
+    for palabra in palabras:
+        matches = process.extract(
+            palabra,
+            medicamentos,
+            scorer=fuzz.partial_ratio,
+            limit=3
+        )
+        candidatos.extend(matches)
+
+    # También probamos con la frase entera
+    matches_full = process.extract(
         texto_filtrado,
         medicamentos,
         scorer=fuzz.WRatio,
         limit=5
     )
+    candidatos.extend(matches_full)
 
-    sugerencias = [{"nombre": m[0], "confianza": round(m[1], 2)} for m in matches]
+    # Ordenamos por score
+    candidatos = sorted(candidatos, key=lambda x: x[1], reverse=True)
 
-    mejor = matches[0] if matches else None
+    # Preparamos sugerencias únicas
+    sugerencias = []
+    vistos = set()
+    for nombre, score, _ in candidatos:
+        if nombre not in vistos:
+            sugerencias.append({"nombre": nombre, "confianza": round(score, 2)})
+            vistos.add(nombre)
+        if len(sugerencias) >= 5:
+            break
+
+    mejor = candidatos[0] if candidatos else None
 
     if mejor:
-        score = mejor[1]  # <-- aquí tenemos el score
-        if score >= 80:   # <-- aceptamos con margen del 80%
+        score = mejor[1]
+        if score >= 70:
             med = Medicamento.query.filter_by(nombre_medicamento=mejor[0]).first()
             return med, sugerencias, score
 
-    # Si no hay match fuerte
     return None, sugerencias, 0.0
 
 
@@ -55,28 +84,31 @@ def buscar_medicamento(texto_ocr):
 # OCR con Google Cloud Vision
 # ----------------------------
 def ocr_texto(ruta_imagen):
-
-    client = vision.ImageAnnotatorClient()
+    api_key = os.getenv("GOOGLE_VISION_KEY")
+    if not api_key:
+        raise Exception("No se encontró GOOGLE_VISION_KEY en .env")
 
     with io.open(ruta_imagen, "rb") as image_file:
-        content = image_file.read()
+        content = base64.b64encode(image_file.read()).decode("utf-8")
 
-    image = vision.Image(content=content)
-    response = client.text_detection(image=image)
-    if response.error.message:
-        raise Exception(f"OCR Error: {response.error.message}")
+    url = f"https://vision.googleapis.com/v1/images:annotate?key={api_key}"
 
-    textos = response.text_annotations
+    payload = {
+        "requests": [
+            {
+                "image": {"content": content},
+                "features": [{"type": "TEXT_DETECTION"}]
+            }
+        ]
+    }
 
-    if textos:
-        # El primer elemento contiene todo el texto detectado
-        texto_detectado = textos[0].description
-        print(">>> TEXTO DETECTADO PRINCIPAL:", texto_detectado)
+    response = requests.post(url, json=payload)
+    result = response.json()
 
-        # Extra: palabras individuales
-        for idx, t in enumerate(textos[1:], start=1):
-            print(f"[{idx}] '{t.description}' -> bounding box: {t.bounding_poly.vertices}")
+    if "error" in result:
+        raise Exception(f"OCR Error: {result['error']}")
 
-        return texto_detectado.strip()
-
-    return ""
+    try:
+        return result["responses"][0]["textAnnotations"][0]["description"].strip()
+    except (KeyError, IndexError):
+        return ""

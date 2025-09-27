@@ -30,3 +30,5 @@ class Consulta(db.Model):
     usuario_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"), nullable=True)
     medicamento_id = db.Column(db.Integer, db.ForeignKey("medicamentos.id"), nullable=False)
     fecha = db.Column(db.Date, default=date.today)
+    imagen_subida = db.Column(db.String(200))   
+    chatgpt = db.Column(db.Text)               
