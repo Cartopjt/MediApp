@@ -116,25 +116,33 @@
             {% endif %}
 
             {% if resultado.chatgpt %}
-              <h3>Información adicional (GPT):</h3>
-              <p>{{ resultado.chatgpt }}</p>
+              <h3>Vision de la IA:</h3>
+              <div>{{ resultado.chatgpt | replace('\n\n', '<br><br>') | replace('\n', '<br>') | safe }}</div>
               <form action="{{ url_for('chat', medicamento=resultado.nombre) }}">
                 <button type="submit">💬 Más información</button>
               </form>
             {% endif %}
+          {% endif %}
 
-            {% if resultado.sugerencias %}
-              <h3>🔍 Sugerencias:</h3>
-              <ul>
-                {% for s in resultado.sugerencias %}
+          <!-- Bloque de sugerencias (siempre visible) -->
+          <h3>💡 ¿No es tu medicamento? Mira estas sugerencias:</h3>
+          {% if resultado.sugerencias %}
+            <ul>
+              {% for s in resultado.sugerencias %}
+                {% if resultado.nombre != s.nombre %}
                   <li>
                     <a href="{{ url_for('ver_medicamento', nombre=s.nombre) }}">
                       {{ s.nombre }} ({{ s.confianza }}%)
                     </a>
                   </li>
-                {% endfor %}
-              </ul>
+                {% endif %}
+              {% endfor %}
+            </ul>
+            {% if resultado.sugerencias|length == 1 and resultado.nombre == resultado.sugerencias[0].nombre %}
+              <p>No hay sugerencias diferentes disponibles.</p>
             {% endif %}
+          {% else %}
+            <p>No hay sugerencias disponibles.</p>
           {% endif %}
         </div>
 

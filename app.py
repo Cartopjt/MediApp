@@ -1,5 +1,6 @@
 import os
-from datetime import date
+import markdown
+from datetime import date,datetime
 from werkzeug.utils import secure_filename
 from flask import Flask, render_template, request ,redirect, url_for, session,flash
 from flask_sqlalchemy import SQLAlchemy
@@ -88,7 +89,8 @@ def consultar_gpt(medicamento, descripcion_base):
         contenido = response.choices[0].message.content
         if not contenido or contenido.strip() == "":
             contenido = "No se pudo generar información en este momento."
-        return contenido
+        contenido_html = markdown.markdown(contenido)    
+        return contenido_html
 
     except Exception as e:
         print(" Error en la llamada a GPT:", e)
@@ -172,8 +174,10 @@ def index():
             return "No seleccionaste archivo"
 
         # Guardar temporalmente la imagen
-        filename = secure_filename(archivo.filename)
-        ruta_imagen = os.path.join("static", archivo.filename)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S%f")
+        ext = os.path.splitext(archivo.filename)[1]  # conserva extensión original (.png, .jpg, etc.)
+        filename = f"imagen_{timestamp}{ext}"
+        ruta_imagen = os.path.join("static", filename)
         archivo.save(ruta_imagen)
 
         # OCR
@@ -182,11 +186,17 @@ def index():
         # Fuzzy matching en BD 
         medicamento, sugerencias,score = buscar_medicamento(texto_detectado)
 
+        resultado = {
+            "imagen": filename,
+            "texto_detectado": texto_detectado,
+            "sugerencias": sugerencias  
+        }
+
         # Coincidencia con dataset (base de datos futuro)
         if medicamento and score >= 80:
             explicacion_gpt = consultar_gpt(medicamento.nombre_medicamento, medicamento.uso_clinico or "")  
-            resultado = {
-                "imagen": filename, # la ruta de la foto subida
+            resultado.update({
+                "imagen": filename, 
                 "nombre": medicamento.nombre_medicamento,
                 "confianza": f"{score:.2f}%",
                 "uso_clinico": medicamento.uso_clinico,
@@ -197,27 +207,26 @@ def index():
                 "interacciones": medicamento.interacciones,
                 "datos_farmaceuticos": medicamento.datos_farmaceuticos,
                 "chatgpt": explicacion_gpt,
-            }
+            })
+
             if current_user.is_authenticated:
                 consulta = Consulta(usuario_id=current_user.id,medicamento_id=medicamento.id,imagen_subida=filename,chatgpt=explicacion_gpt)
                 db.session.add(consulta)
                 db.session.commit()    
-                session["ultimo_resultado"] = resultado
         else:
-            if sugerencias:
-                resultado = {
-                    "imagen": filename,
-                    "texto_detectado": texto_detectado,
-                    "error": "No se detectó coincidencia exacta, prueba otra vez",
-                    "sugerencias": sugerencias
-                }
+            if not sugerencias:
+                resultado["error"] = "Medicamento no encontrado."
             else: 
-                resultado = {
-                    "texto_detectado": texto_detectado,
-                    "error": "Medicamento no encontrado."
-                }
+                resultado["error"] = "No se detectó coincidencia exacta, prueba otra vez"
+
+        session["ultimo_resultado"] = {
+            "nombre": resultado.get("nombre"),
+            "imagen": filename
+        }
+        session["ultima_imagen"] = filename
 
     return render_template("index.html", resultado=resultado)
+        
 
 
 #Volver a consulta
@@ -240,7 +249,7 @@ def volver_consulta():
             "efectos_secundarios": med.efectos_secundarios,
             "interacciones": med.interacciones,
             "datos_farmaceuticos": med.datos_farmaceuticos,
-            "chatgpt": consulta.chatgpt  # Aquí cargamos la respuesta guardada
+            "chatgpt": consulta.chatgpt 
         }
     else:
         resultado = session.get("ultimo_resultado")
@@ -254,26 +263,42 @@ def volver_consulta():
 #Ruta alternativa
 @app.route("/medicamento/<nombre>")
 def ver_medicamento(nombre):
-    med = Medicamento.query.filter_by(nombre_medicamento=nombre).first()
-    if not med:
-        return "Medicamento no encontrado", 404
+    medicamento = Medicamento.query.filter_by(nombre_medicamento=nombre).first()
+    if not medicamento:
+        flash("El medicamento no existe en la base de datos")
+        return redirect(url_for("index"))
 
-    explicacion_gpt = consultar_gpt(med.nombre_medicamento, med.uso_clinico or "")
+    imagen = session.get("ultima_imagen")
+    session["medicamento_actual"] = nombre
+
+    # Generar explicación GPT
+    explicacion_gpt = consultar_gpt(medicamento.nombre_medicamento, medicamento.uso_clinico or "")
 
     resultado = {
-        "texto_detectado": nombre,
-        "nombre": med.nombre_medicamento,
-        "confianza": "100%",
-        "dosis": med.dosis_pautas,
-        "descripcion": med.uso_clinico,
-        "chatgpt": explicacion_gpt
+        "imagen": imagen, 
+        "nombre": medicamento.nombre_medicamento,
+        "confianza": "Aceptado manualmente",
+        "uso_clinico": medicamento.uso_clinico,
+        "dosis_pautas": medicamento.dosis_pautas,
+        "contraindicaciones": medicamento.contraindicaciones,
+        "precauciones": medicamento.precauciones,
+        "efectos_secundarios": medicamento.efectos_secundarios,
+        "interacciones": medicamento.interacciones,
+        "datos_farmaceuticos": medicamento.datos_farmaceuticos,
+        "chatgpt": explicacion_gpt,
+        "sugerencias": []
     }
-
+    session["ultimo_resultado"] = resultado
     return render_template("index.html", resultado=resultado)
+
 
 #Ruta de chat
 @app.route("/chat/<medicamento>", methods=["GET", "POST"])
 def chat(medicamento):
+    med_sesion = session.get("medicamento_actual")
+    if med_sesion:
+        medicamento = med_sesion
+        
     if medicamento not in obtener_nombres():
         return "Medicamento no válido."
 
