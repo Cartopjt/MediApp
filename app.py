@@ -102,36 +102,59 @@ def consultar_gpt(medicamento, descripcion_base):
 #Registro
 @app.route("/register", methods=["GET", "POST"])
 def register():
+    errors = {}
     if request.method == "POST":
-        email = request.form["email"]
-        password = request.form["password"]
+        email = request.form["email"].strip()
+        password = request.form["password"].strip()
 
-        if User.query.filter_by(email=email).first():
-            return "El usuario ya existe"
+        # Validaciones
+        if not email:
+            errors["email"] = "El correo es obligatorio"
+        elif User.query.filter_by(email=email).first():
+            errors["email"] = "El usuario ya existe"
 
-        nuevo = User(email=email, passwd=generate_password_hash(password))
-        db.session.add(nuevo)
-        db.session.commit()
-        return redirect(url_for("login"))
+        if not password:
+            errors["password"] = "La contraseña es obligatoria"
+        elif len(password) < 6:
+            errors["password"] = "La contraseña debe tener al menos 6 caracteres"
 
-    return render_template("register.html")
+        if not errors:  # Si no hay errores, registramos
+            nuevo = User(email=email, passwd=generate_password_hash(password))
+            db.session.add(nuevo)
+            db.session.commit()
+            return redirect(url_for("login"))
+
+    return render_template("register.html", errors=errors)
 
 #Login
 @app.route("/login", methods=["GET", "POST"])
 def login():
+    email_error = None
+    password_error = None
+    email_value = ""
+
     if request.method == "POST":
         email = request.form["email"]
         password = request.form["password"]
+        # para mantener el valor escrito
+        email_value = email 
 
         user = User.query.filter_by(email=email).first()
-        if user and check_password_hash(user.passwd, password):
+
+        if not user:
+            email_error = "El correo no está registrado"
+        elif not check_password_hash(user.passwd, password):
+            password_error = "La contraseña es incorrecta"
+        else:
             login_user(user)
             return redirect(url_for("index"))
-        else:
-            return "Credenciales inválidas"
 
-    return render_template("login.html")
-
+    # Pasamos los errores y el email ingresado al template
+    return render_template("login.html",
+                           email_error=email_error,
+                           password_error=password_error,
+                           email=email_value)
+    
 #Logout
 @app.route("/logout")
 @login_required
