@@ -1,9 +1,41 @@
-<h2>Login</h2>
-<form method="POST">
-  <input type="email" name="email" placeholder="Email" required>
-  <input type="password" name="password" placeholder="Contraseña" required>
-  <button type="submit">Entrar</button>
-</form>
-<a href="{{ url_for('register') }}">¿No tienes cuenta? Regístrate</a>
-<a href="{{ url_for('index') }}"><button type="button">Ir como invitado</button>
-</a>
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Login - MediApp</title>
+  <!-- Bootstrap CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    /* Borde redondeado y sombra para la tarjeta */
+    .login-card {
+      border-radius: 12px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+    }
+  </style>
+</head>
+<body class="bg-light">
+
+  <div class="container d-flex justify-content-center align-items-center vh-100">
+    <div class="card p-5 login-card" style="max-width: 500px; width: 100%;">
+      <h2 class="text-center text-success mb-4">Login</h2>
+
+      <form method="POST">
+        <input type="email" name="email" class="form-control mb-3" placeholder="Email" required>
+        <input type="password" name="password" class="form-control mb-3" placeholder="Contraseña" required>
+        <button type="submit" class="btn btn-success w-100 mb-3">Entrar</button>
+      </form>
+
+      <div class="text-center mb-2">
+        <a href="{{ url_for('register') }}" class="text-success">¿No tienes cuenta? Regístrate</a>
+      </div>
+      <div class="text-center">
+        <a href="{{ url_for('index') }}">
+          <button type="button" class="btn btn-outline-success w-100">Ir como invitado</button>
+        </a>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>
