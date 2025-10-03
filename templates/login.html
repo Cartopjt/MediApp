@@ -7,7 +7,6 @@
   <!-- Bootstrap CSS -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
   <style>
-    /* Borde redondeado y sombra para la tarjeta */
     .login-card {
       border-radius: 12px;
       box-shadow: 0 4px 10px rgba(0,0,0,0.1);
@@ -21,8 +20,22 @@
       <h2 class="text-center text-success mb-4">Login</h2>
 
       <form method="POST">
-        <input type="email" name="email" class="form-control mb-3" placeholder="Email" required>
-        <input type="password" name="password" class="form-control mb-3" placeholder="Contraseña" required>
+        <!-- validar Email -->
+        <input type="email" name="email" class="form-control mb-1" placeholder="Email" required value="{{ email or '' }}">
+        {% if email_error %}
+          <div class="text-danger mb-3 small">{{ email_error }}</div>
+        {% else %}
+          <div class="mb-3"></div>
+        {% endif %}
+
+        <!-- validar contra -->
+        <input type="password" name="password" class="form-control mb-1" placeholder="Contraseña" required>
+        {% if password_error %}
+          <div class="text-danger mb-3 small">{{ password_error }}</div>
+        {% else %}
+          <div class="mb-3"></div>
+        {% endif %}
+
         <button type="submit" class="btn btn-success w-100 mb-3">Entrar</button>
       </form>
 
@@ -37,5 +50,7 @@
     </div>
   </div>
 
+  <!-- Bootstrap JS -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
