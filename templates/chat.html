@@ -2,36 +2,57 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Chat - {{ medicamento }}</title>
+  <!-- Bootstrap CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
   <style>
-    body { font-family: Arial; background: #f4f4f9; padding: 20px; }
-    .chat-box { border: 1px solid #ccc; background: #fff; padding: 15px; max-width: 600px; margin: auto; border-radius: 8px; }
-    .msg { margin: 10px 0; }
-    .user { color: blue; font-weight: bold; }
-    .bot { color: green; font-weight: bold; }
-    .input-area { margin-top: 15px; }
+    body { background: #f4f4f9; }
+    .chat-box {
+      max-width: 700px;
+      height: 400px;
+      margin: auto;
+      overflow-y: auto;
+    }
+    .user { color:#c0c5c5f6; font-weight: bold; }
+    .bot { color: #198754; font-weight: bold; }
   </style>
 </head>
 <body>
-  <h1>Chat sobre {{ medicamento }}</h1>
 
-  <div class="chat-box">
-    {% for mensaje in historial %}
-      {% if mensaje.usuario %}
-        <div class="msg"><span class="user">Tú:</span> {{ mensaje.usuario }}</div>
-      {% endif %}
-      <div class="msg"><span class="bot">Asistente:</span> {{ mensaje.bot }}</div>
-    {% endfor %}
+  <div class="container my-4">
+
+    <h1 class="text-center text-success mb-4">Chat sobre {{ medicamento }}</h1>
+
+    <!-- Chat box -->
+    <div class="card chat-box p-3 shadow-sm bg-white rounded">
+      {% for mensaje in historial %}
+        {% if mensaje.usuario %}
+          <div class="mb-2"><span class="user">Tú:</span> {{ mensaje.usuario }}</div>
+        {% endif %}
+        <div class="mb-2"><span class="bot">Asistente:</span> {{ mensaje.bot }}</div>
+      {% endfor %}
+    </div>
+
+    <!-- Formulario -->
+    <form method="POST" class="d-flex mt-3 justify-content-center gap-2">
+      <input type="text" name="mensaje" class="form-control" placeholder="Escribe tu pregunta..." required>
+      <button type="submit" class="btn" style="background-color:#198754; color:white;">Enviar</button>
+    </form>
+
+    <!-- Links -->
+    <div class="text-center mt-3">
+      <a href="{{ url_for('index') }}" class="text-success me-3">⬅ Volver al inicio</a>
+      <a href="{{ url_for('volver_consulta') }}" class="text-success">Volver a la consulta</a>
+    </div>
+
   </div>
 
-  <form method="POST" class="input-area">
-    <input type="text" name="mensaje" placeholder="Escribe tu pregunta..." required style="width:70%">
-    <button type="submit">Enviar</button>
-  </form>
+  <!-- Bootstrap JS -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 
-  <p>
-    <a href="{{ url_for('index') }}">⬅ Volver al inicio</a>
-    <a href="{{ url_for('volver_consulta') }}">Volver a la consulta</a>
-  </p>
+  <!-- Script js-->
+  <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+  
 </body>
 </html>
