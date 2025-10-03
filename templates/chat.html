@@ -34,10 +34,11 @@
       {% endfor %}
     </div>
 
-    <!-- Formulario -->
-    <form method="POST" class="d-flex mt-3 justify-content-center gap-2">
-      <input type="text" name="mensaje" class="form-control" placeholder="Escribe tu pregunta..." required>
-      <button type="submit" class="btn" style="background-color:#198754; color:white;">Enviar</button>
+    <!-- Formulario chat -->
+    <form method="POST" class="d-flex mt-3" style="max-width: 700px; margin: 0 auto;">
+      <input type="text" name="mensaje" class="form-control me-2 flex-grow-1" placeholder="Escribe tu pregunta..." required 
+           style="height: 50px; border-radius: 25px; padding: 0 15px;">
+      <button type="submit" class="btn" style="background-color:#198754; color:white; height: 50px; border-radius: 25px;">Enviar</button>
     </form>
 
     <!-- Links -->
