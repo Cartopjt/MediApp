@@ -10,13 +10,16 @@ from flask_login import (
 )
 from werkzeug.security import generate_password_hash, check_password_hash
 from rapidfuzz import process
+from dotenv import load_dotenv
 import pymysql
 from openai import OpenAI
 
 #Modelos y el ORC
 from extension import db
 from models import User, Medicamento, Consulta
-from ocr_utility import ocr_texto, buscar_medicamento
+from ocr_utility import ocr_texto, buscar_medicamento,es_medicamento_gpt,consultar_gpt
+
+load_dotenv() 
 
 pymysql.install_as_MySQLdb()
 app = Flask(__name__)
@@ -34,7 +37,8 @@ login_manager.init_app(app)
 login_manager.login_view = "login"
 
 # Cliente GPT
-client = OpenAI(api_key="") 
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+client = OpenAI(api_key=OPENAI_API_KEY)
 
 # LOGIN MANAGER
 @login_manager.user_loader
@@ -49,88 +53,63 @@ def obtener_medicamentos():
 
 def obtener_nombres():
     return [m.nombre_medicamento for m in Medicamento.query.all()]
-
-def consultar_gpt(medicamento, descripcion_base):
-    print(">>> Entrando a consultar_gpt con:", medicamento)
-
-    # Filtro: solo dejamos pasar medicamentos de la lista
-    if medicamento not in obtener_nombres():
-        return "El texto detectado no corresponde a un medicamento válido."
-
-    prompt = f"""
-    Eres un asistente médico especializado exclusivamente en medicamentos.
-    Solo debes responder información médica relacionada con {medicamento}.
-    Si la consulta no está relacionada con medicamentos, responde con:
-    '⚠️ Lo siento, solo puedo dar información sobre medicamentos.'
-    
-    Explica de forma clara y sencilla:
-    - Qué es {medicamento}
-    - Para qué sirve
-    - Efectos secundarios comunes
-    - Precauciones y contraindicaciones
-    
-    Información base: {descripcion_base}
-    """
-
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": "Responde siempre en texto visible, claro y en español."},
-                {"role": "user", "content": prompt}
-            ],
-            max_completion_tokens=500
-        )
-
-        print("=== Respuesta GPT ===")
-        print(response)
-        print("====================")
-
-        contenido = response.choices[0].message.content
-        if not contenido or contenido.strip() == "":
-            contenido = "No se pudo generar información en este momento."
-        contenido_html = markdown.markdown(contenido)    
-        return contenido_html
-
-    except Exception as e:
-        print(" Error en la llamada a GPT:", e)
-        return "Error al consultar información con GPT."
-
     
 
 # RUTAS DE AUTENTICACIÓN
 #Registro
 @app.route("/register", methods=["GET", "POST"])
 def register():
+    errors = {}
     if request.method == "POST":
-        email = request.form["email"]
-        password = request.form["password"]
+        email = request.form["email"].strip()
+        password = request.form["password"].strip()
 
-        if User.query.filter_by(email=email).first():
-            return "El usuario ya existe"
+        # Validaciones
+        if not email:
+            errors["email"] = "El correo es obligatorio"
+        elif User.query.filter_by(email=email).first():
+            errors["email"] = "El usuario ya existe"
 
-        nuevo = User(email=email, passwd=generate_password_hash(password))
-        db.session.add(nuevo)
-        db.session.commit()
-        return redirect(url_for("login"))
+        if not password:
+            errors["password"] = "La contraseña es obligatoria"
+        elif len(password) < 6:
+            errors["password"] = "La contraseña debe tener al menos 6 caracteres"
 
-    return render_template("register.html")
+        # Si no hay errores → registramos
+        if not errors:
+            nuevo = User(email=email, passwd=generate_password_hash(password))
+            db.session.add(nuevo)
+            db.session.commit()
+            return redirect(url_for("login"))
+
+    return render_template("register.html", errors=errors)
 
 #Login
 @app.route("/login", methods=["GET", "POST"])
 def login():
+    email_error = None
+    password_error = None
+    email_value = ""
+
     if request.method == "POST":
-        email = request.form["email"]
-        password = request.form["password"]
+        email = request.form["email"].strip()
+        password = request.form["password"].strip()
+        email_value = email  # mantener el valor escrito
 
         user = User.query.filter_by(email=email).first()
-        if user and check_password_hash(user.passwd, password):
+
+        if not user:
+            email_error = "El correo no está registrado"
+        elif not check_password_hash(user.passwd, password):
+            password_error = "La contraseña es incorrecta"
+        else:
             login_user(user)
             return redirect(url_for("index"))
-        else:
-            return "Credenciales inválidas"
 
-    return render_template("login.html")
+    return render_template("login.html",
+                           email_error=email_error,
+                           password_error=password_error,
+                           email=email_value)
 
 #Logout
 @app.route("/logout")
@@ -182,10 +161,15 @@ def index():
 
         # OCR
         texto_detectado = ocr_texto(ruta_imagen)
+        if not es_medicamento_gpt(texto_detectado):
+            resultado = {"error": "❌ No se detectó un medicamento válido."}
+            return render_template("index.html", resultado=resultado)
 
         # Fuzzy matching en BD 
         medicamento, sugerencias,score = buscar_medicamento(texto_detectado)
 
+
+        
         resultado = {
             "imagen": filename,
             "texto_detectado": texto_detectado,
@@ -193,7 +177,7 @@ def index():
         }
 
         # Coincidencia con dataset (base de datos futuro)
-        if medicamento and score >= 80:
+        if medicamento and score >= 85:
             explicacion_gpt = consultar_gpt(medicamento.nombre_medicamento, medicamento.uso_clinico or "")  
             resultado.update({
                 "imagen": filename, 
@@ -214,10 +198,12 @@ def index():
                 db.session.add(consulta)
                 db.session.commit()    
         else:
-            if not sugerencias:
-                resultado["error"] = "Medicamento no encontrado."
-            else: 
-                resultado["error"] = "No se detectó coincidencia exacta, prueba otra vez"
+            if sugerencias:
+                resultado["error"] = "No coincidió exacto. Tal vez quisiste decir:"
+                resultado["sugerencias"] = sugerencias
+            else:
+                resultado["error"] = "❌ No se detectó un medicamento válido."
+                resultado["sugerencias"] = []
 
         session["ultimo_resultado"] = {
             "nombre": resultado.get("nombre"),
@@ -324,8 +310,14 @@ def chat(medicamento):
         prompt = f"""
         Eres un asistente médico especializado exclusivamente en el medicamento {medicamento}.
         Responde SOLO sobre este medicamento.
-        Si la consulta no está relacionada con medicamentos, responde con:
+
+        - Si la consulta menciona otro medicamento diferente a {medicamento}, responde con:
+        '⚠️ Solo puedo dar información sobre {medicamento}. 
+        Si deseas información de otro medicamento, búscalo en la sección principal.'
+
+        - Si la consulta no está relacionada con medicamentos, responde con:
         '⚠️ Lo siento, solo puedo dar información sobre medicamentos.'
+
         Pregunta del usuario: {pregunta}
         """
 

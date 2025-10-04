@@ -3,12 +3,17 @@ import re
 import os
 import base64
 import requests
+import markdown   
 from google.cloud import vision
 from rapidfuzz import fuzz, process
 from models import Medicamento
 from dotenv import load_dotenv
+from openai import OpenAI
 
 load_dotenv()
+
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+client = OpenAI(api_key=OPENAI_API_KEY)
 # ----------------------------
 # Búsqueda fuzzy de medicamento
 # ----------------------------
@@ -18,6 +23,25 @@ LISTA_NEGRA = {
     "argentina", "genfarc", "farmacia", "análgesico", "analgesico", 
     "antifebril"
 }
+
+def es_medicamento_gpt(texto):
+    prompt = f"""
+    Eres un filtro médico.
+    Responde únicamente con "SI" si "{texto}" es un nombre de un medicamento válido,
+    aunque esté mal escrito ligeramente (ej. paracitamol → paracetamol).
+    Responde "NO" si no parece medicamento.
+    No expliques nada, solo responde con SI o NO.
+    """
+
+    resp = client.chat.completions.create(
+        model="gpt-4o", 
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0
+    )
+
+    respuesta = resp.choices[0].message.content.strip().upper()
+    return respuesta == "SI"
+
 
 def limpiar_texto(texto):
     limpio = re.sub(r"[^a-zA-ZáéíóúÁÉÍÓÚñÑ0-9\s]", " ", texto)
@@ -34,7 +58,10 @@ def buscar_medicamento(texto_ocr):
 
     texto_filtrado = limpiar_texto(texto_ocr)
 
-    # Dividimos en palabras para buscar coincidencias también
+    if len(texto_filtrado) < 3:  # OCR basura
+        return None, [], 0.0
+
+    # Dividimos en palabras
     palabras = texto_filtrado.split()
 
     candidatos = []
@@ -59,11 +86,11 @@ def buscar_medicamento(texto_ocr):
     # Ordenamos por score
     candidatos = sorted(candidatos, key=lambda x: x[1], reverse=True)
 
-    # Preparamos sugerencias únicas
+    # Filtramos sugerencias útiles (>= 60)
     sugerencias = []
     vistos = set()
     for nombre, score, _ in candidatos:
-        if nombre not in vistos:
+        if score >= 60 and nombre not in vistos:
             sugerencias.append({"nombre": nombre, "confianza": round(score, 2)})
             vistos.add(nombre)
         if len(sugerencias) >= 5:
@@ -71,11 +98,9 @@ def buscar_medicamento(texto_ocr):
 
     mejor = candidatos[0] if candidatos else None
 
-    if mejor:
-        score = mejor[1]
-        if score >= 70:
-            med = Medicamento.query.filter_by(nombre_medicamento=mejor[0]).first()
-            return med, sugerencias, score
+    if mejor and mejor[1] >= 85:
+        med = Medicamento.query.filter_by(nombre_medicamento=mejor[0]).first()
+        return med, sugerencias, mejor[1]
 
     return None, sugerencias, 0.0
 
@@ -112,3 +137,51 @@ def ocr_texto(ruta_imagen):
         return result["responses"][0]["textAnnotations"][0]["description"].strip()
     except (KeyError, IndexError):
         return ""
+    
+
+def consultar_gpt(medicamento, descripcion_base):
+    print(">>> Entrando a consultar_gpt con:", medicamento)
+
+    # Filtro: solo dejamos pasar medicamentos de la lista
+    if medicamento not in [m.nombre_medicamento for m in Medicamento.query.all()]:
+        return "El texto detectado no corresponde a un medicamento válido."
+
+    prompt = f"""
+    Eres un asistente médico especializado exclusivamente en medicamentos.
+    Solo debes responder información médica relacionada con {medicamento}.
+    Si la consulta no está relacionada con medicamentos, responde con:
+    '⚠️ Lo siento, solo puedo dar información sobre medicamentos.'
+    
+    Explica de forma clara y sencilla:
+    - Qué es {medicamento}
+    - Para qué sirve
+    - Efectos secundarios comunes
+    - Precauciones y contraindicaciones
+    
+    Información base: {descripcion_base}
+    """
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": "Responde siempre en texto visible, claro y en español."},
+                {"role": "user", "content": prompt}
+            ],
+            max_completion_tokens=500
+        )
+
+        print("=== Respuesta GPT ===")
+        print(response)
+        print("====================")
+
+        contenido = response.choices[0].message.content
+        if not contenido or contenido.strip() == "":
+            contenido = "No se pudo generar información en este momento."
+          
+        return markdown.markdown(contenido)
+
+    except Exception as e:
+        print(" Error en la llamada a GPT:", e)
+        return "Error al consultar información con GPT."
+   

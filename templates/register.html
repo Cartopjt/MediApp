@@ -1,10 +1,44 @@
-<h2>Registro</h2>
-<form method="POST">
-  <input type="email" name="email" placeholder="Email" required>
-  <input type="password" name="password" placeholder="Contraseña" required>
-  <button type="submit">Registrarse</button>
-</form>
-<a href="{{ url_for('login') }}">¿Ya tienes cuenta? Inicia sesión</a>
-<a href="{{ url_for('index') }}">
-  <button type="button">Ir como invitado</button>
-</a>
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Registro - MediApp</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    .register-card {
+      border-radius: 12px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+    }
+  </style>
+</head>
+<body class="bg-light">
+
+  <div class="container d-flex justify-content-center align-items-center vh-100">
+    <div class="card p-5 register-card" style="max-width: 500px; width: 100%;">
+      <h2 class="text-center text-success mb-4">Registro</h2>
+
+      <form method="POST">
+        <!-- email -->
+        <input type="email" name="email" class="form-control mb-1" placeholder="Email" required>
+        {% if errors.get("email") %}
+          <div class="text-danger mb-2">{{ errors["email"] }}</div>
+        {% endif %}
+
+        <!-- contra -->
+        <input type="password" name="password" class="form-control mb-1" placeholder="Contraseña" required>
+        {% if errors.get("password") %}
+          <div class="text-danger mb-2">{{ errors["password"] }}</div>
+        {% endif %}
+
+        <button type="submit" class="btn btn-success w-100 mt-3">Registrarse</button>
+      </form>
+
+      <div class="text-center mt-3">
+        <a href="{{ url_for('login') }}" class="text-success">¿Ya tienes cuenta? Inicia sesión</a>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>
